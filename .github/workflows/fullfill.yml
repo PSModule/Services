@@ -1,0 +1,117 @@
+name: CD
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}
+
+permissions:
+  id-token: write # Needed for OIDC auth in Terraform
+
+env:
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_USE_OIDC: true
+
+jobs:
+  CD:
+    name: CD
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Generate app token
+        uses: actions/create-github-app-token@v1
+        id: authenticate
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PEM }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.authenticate.outputs.token }}
+
+      - name: Get PR data
+        uses: actions/github-script@v7
+        if: github.event_name == 'push'
+        id: get_pr_data
+        with:
+          github-token: ${{ steps.authenticate.outputs.token }}
+          script: |
+              return (
+                await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                  ... context.repo,
+                  commit_sha: context.sha,
+                })
+              ).data[0]
+
+      - name: Get issue number
+        shell: pwsh
+        id: get_issue_data
+        if: ${{ steps.get_pr_data.outputs.result != null }}
+        env:
+          PR_DATA: ${{ steps.get_pr_data.outputs.result }}
+        run: |
+          $prdata = $env:PR_DATA | ConvertFrom-Json
+          $prTitle = $prdata.title
+
+          # Get the issue number from the PR title
+          if ($prTitle -match '#(\d+)') {
+              $issueNumber = $matches[1]
+              Write-Output "Issue number: $issueNumber"
+              "issue=$true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+              "issueNumber=$issueNumber" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+              Write-Output "No issue number found in the title."
+              "issue=$false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Acknowledge
+        uses: actions/github-script@v7
+        if: ${{ steps.get_issue_data.outputs.issue == 'true' }}
+        env:
+          issue_number: ${{ steps.get_issue_data.outputs.issueNumber }}
+        with:
+          github-token: ${{ steps.authenticate.outputs.token }}
+          script: |
+            const body = `
+            @${context.actor} : All looks good! Merged the request now so we can get the repository created for you.
+            `
+
+            github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: process.env.issue_number,
+              body
+            })
+
+      - run: terraform init
+
+      - name: Terraform apply
+        env:
+          # GITHUB_TOKEN: ${{ steps.authenticate.outputs.token }} # App has issues with GH permissions team lookup and generate repo from templateæ
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: terraform apply -auto-approve
+
+      - name: Close initial issue
+        if: ${{ steps.get_issue_data.outputs.issue == 'true' }}
+        shell: pwsh
+        env:
+          GITHUB_ENTERPRISE_TOKEN: ${{ steps.authenticate.outputs.token }}
+          ISSUE_NUMBER: ${{ steps.get_issue_data.outputs.issueNumber }}
+          PR_DATA: ${{ steps.get_pr_data.outputs.result }}
+        run: |
+          $prdata = $env:PR_DATA | ConvertFrom-Json
+          $prNmber = $prdata.number
+
+          '::group::Authenticate to GitHub'
+          $env:GITHUB_ENTERPRISE_TOKEN | gh auth login --hostname $env:GH_HOST --with-token
+          gh auth status
+
+          '::group::Close issue'
+          gh issue close $env:ISSUE_NUMBER --comment "With PR #$prNmber being closed, we can close this issue." --reason completed

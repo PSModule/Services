@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      # All tf files
+      - '**/*.tf'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  statuses: write
+  id-token: write
+
+env:
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  GITHUB_TOKEN: ${{ secrets.PAT }}
+  ARM_USE_OIDC: true
+
+jobs:
+  CI:
+    name: CI
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Generate app token
+        uses: actions/create-github-app-token@v1
+        id: authenticate
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PEM }}
+
+      - uses: actions/checkout@v4
+
+      - run: terraform init
+
+      - name: Create a speculative plan
+        id: tfplan
+        shell: pwsh
+        run: |
+          # Create a speculative plan
+          $plan = terraform plan -lock=false -no-color
+          Set-Content -Path 'tfplan' -Value $plan -Encoding utf8
+
+          terraform plan -lock=false
+
+      - name: Write plan in pr comment
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        env:
+          plan: ${{ steps.tfplan.outputs.plan }}
+        with:
+          github-token: ${{ steps.authenticate.outputs.token }}
+          script: |
+              const fs = require('fs')
+              const fileContent = fs.readFileSync('tfplan', 'utf8')
+
+              const body = `
+              Here is the plan for the changes in this PR:
+
+              <details>
+              <summary>Terraform Plan</summary>
+
+              \`\`\`terraform
+              ${fileContent}
+              \`\`\`
+
+              `
+
+              github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body
+              })

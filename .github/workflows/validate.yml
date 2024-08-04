@@ -1,0 +1,355 @@
+name: Create Repo - Validate
+on:
+  issues:
+    types:
+      - opened
+      - edited
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate issue
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'create-repo') && github.event.issue.state == 'open'
+    steps:
+      - name: Generate app token
+        uses: actions/create-github-app-token@v1
+        id: authenticate
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PEM }}
+
+      - name: Handle generate app installation token failure
+        if: ${{ failure() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `
+            @${context.actor} : Unfortunately, it appears something went wrong in generating app installation token granting.
+            `
+
+            github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body
+            })
+
+      - name: Retrieve GitHub App User ID
+        id: app
+        uses: actions/github-script@v7
+        env:
+          appSlug: ${{ steps.authenticate.outputs.app-slug }}
+        with:
+          github-token: ${{ steps.authenticate.outputs.token }}
+          script: |
+            const username = `${process.env.appSlug}[bot]`
+            console.log(`Username: ${username}`)
+
+            const app = (await github.rest.users.getByUsername({
+              username: `${username}`
+            })).data
+
+            console.log(JSON.stringify(app))
+
+            return app
+
+      - name: Application data
+        shell: pwsh
+        env:
+          DATA: ${{ steps.app.outputs.result }}
+        run: |
+          $data = $env:DATA | ConvertFrom-Json
+          Write-Verbose ($data | Out-String) -Verbose
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.authenticate.outputs.token }}
+
+      - name: Parse issue form
+        id: parse
+        uses: zentered/issue-forms-body-parser@v2.2.0
+
+      - name: Print parsed data
+        shell: pwsh
+        env:
+          DATA: ${{ steps.parse.outputs.data }}
+        run: |
+          $data = $env:DATA | ConvertFrom-Json
+          Write-Verbose ($data | Out-String) -Verbose
+
+      - name: Record issue form results
+        if: false
+        uses: actions/github-script@v7
+        env:
+          ISSUE_FORM_JSON: ${{ steps.parse.outputs.data }}
+        with:
+          github-token: ${{ steps.authenticate.outputs.token }}
+          script: |
+            const issueForm = JSON.parse(process.env.ISSUE_FORM_JSON)
+            const jsonPretty = JSON.stringify(issueForm, null, 2)
+
+            const body = `
+            Nice!  Let's validate the issue form so we can get this thing done!
+
+            <details>
+            <summary>Issue Form Payload</summary>
+
+            \`\`\`json
+            ${jsonPretty}
+            \`\`\`
+            </details>
+            `
+
+            github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body
+            })
+
+      - name: Verify issue form results
+        id: inputs
+        uses: actions/github-script@v7
+        env:
+          ISSUE_FORM_JSON: ${{ steps.parse.outputs.data }}
+          VALIDATE_FILE: ./scripts/validate.js
+        with:
+          github-token: ${{ steps.authenticate.outputs.token }}
+          script: |
+            const validate = require(process.env.VALIDATE_FILE)
+            await validate({github, context, core})
+
+      - name: Handle verify issue form results failure
+        if: ${{ failure() }}
+        uses: actions/github-script@v7
+        env:
+          ERRORS: ${{ steps.inputs.outputs.errors }}
+        with:
+          github-token: ${{ steps.authenticate.outputs.token }}
+          script: |
+            const errors = JSON.parse(process.env.ERRORS)
+            const errorsPretty = errors.map(error => `1. ${error}`).join("\r\n")
+            const body = `
+            @${context.actor} : Unfortunately, it appears one or more validation issues arose or something went wrong.
+
+            ${errorsPretty}
+            `
+
+            github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body
+            })
+
+      - name: Configure git
+        shell: pwsh
+        env:
+          APP_USER_OBJECT: ${{ steps.app.outputs.result }}
+        run: |
+          $app = ($env:APP_USER_OBJECT | ConvertFrom-Json)
+          git config --global user.name "$($app.login)"
+          git config --global user.email "$($app.id)+$($app.login)@users.noreply.github.com"
+          git config --global --list
+
+      - name: Build terraform file
+        id: build
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ steps.authenticate.outputs.token }}
+          ISSUE_FORM_JSON: ${{ steps.parse.outputs.data }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          $branchName = "create-repo-$env:ISSUE_NUMBER"
+          Write-Host "::group::Create branch [$branchName]"
+          git fetch
+          git checkout -b $branchName
+          $upstreamBranches = git branch -r
+          Write-Verbose 'Upstream branches' -Verbose
+          Write-Verbose ($upstreamBranches | Out-String) -Verbose
+          $branchExists = ($upstreamBranches | ForEach-Object { $_ -Match "origin/$branchName" }) -contains $true
+          if ($branchExists) {
+              Write-Verbose "Branch [$branchName] exists on remote, pulling changes." -Verbose
+              git pull origin $branchName --rebase
+          }
+
+          Write-Host '::group::Process data from issue'
+          $repository = $env:ISSUE_FORM_JSON | ConvertFrom-Json -AsHashtable
+          Write-Verbose ($repository | Out-String) -Verbose
+
+          Write-Host '::group::Build replacement table'
+          $type = [string]($repository.type.text).ToLower()
+
+          $replacements = @{
+              name                    = $repository.name.text
+              organization            = $repository.organization.text
+              description             = $repository.description.text
+              visibility              = $repository.visibility.text
+              type                    = $type
+              business_application_id = $repository['business-application-id'].text
+          }
+          Write-Verbose ($replacements | Out-String) -Verbose
+
+          Write-Host '::group::Build Terraform file'
+          $filePath = Join-Path -Path $PWD -ChildPath "$($repository.name.text).tf"
+          $repoFileTemplate = Join-Path -Path 'template' -ChildPath "$type.txt"
+          $content = Get-Content -Path $repoFileTemplate -Raw
+          foreach ($item in $replacements.Keys) {
+              $value = $replacements[$item]
+              $content = $content.Replace("{{ $item }}", $value)
+          }
+          $content | Set-Content -Path $filePath -Force
+
+          Write-Host "::group::File content [$filePath]"
+          Write-Verbose (Get-Content -Path $filePath -Raw) -Verbose
+          "file-path=$filePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+          Write-Host '::group::Add files'
+          git add .
+          git status
+          Write-Host '::group::Commit changes'
+          git commit -m "Automated commit"
+          git status
+          Write-Host '::group::Push changes'
+          git push --set-upstream origin $branchName
+          git status
+
+          Get-ChildItem env: | Format-Table -AutoSize
+
+      - name: PR changes
+        id: pr
+        shell: pwsh
+        env:
+          GITHUB_ENTERPRISE_TOKEN: ${{ steps.authenticate.outputs.token }}
+          BRANCH_NAME: create-repo-${{ github.event.issue.number }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          '::group::Authenticate to GitHub'
+          $env:GITHUB_ENTERPRISE_TOKEN | gh auth login --hostname $env:GH_HOST --with-token
+          gh auth status
+
+          '::group::Ensure PR exists'
+          $pr = gh pr list --state open --base main --head create-repo-${env:ISSUE_NUMBER} --json 'number,title,baseRefName,headRefName' | ConvertFrom-Json
+          if (-not $pr) {
+              Write-Host "No PR exists for issue [$env:ISSUE_NUMBER], creation one."
+              gh pr create --title "Request #$env:ISSUE_NUMBER" --body "Based on request #$env:ISSUE_NUMBER" --base main --head $env:BRANCH_NAME
+          }
+          $pr = gh pr list --state open --base main --head create-repo-${env:ISSUE_NUMBER} --json 'number,title,baseRefName,headRefName' | ConvertFrom-Json
+          if (-not $pr) {
+              Write-Error "Failed to create PR for issue [$env:ISSUE_NUMBER]"
+              exit 1
+          }
+          $pr | Select-Object number,title,baseRefName,headRefName | Format-Table -AutoSize
+          $prNumber = $pr.number
+
+          if (-not $prNumber) {
+              Write-Error "Failed to create PR for issue [$env:ISSUE_NUMBER]"
+              exit 1
+          }
+
+          "::group::Output PR number [$prNumber] to 'prNumber'"
+          "prNumber=$prNumber" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+          '::group::Ensure label is added to PR'
+          gh pr edit $prNumber --add-label create-repo --repo $env:GITHUB_REPOSITORY
+
+          '::group::Ensure actor is assigned to the PR'
+          gh pr edit $prNumber --add-assignee $env:GITHUB_ACTOR --repo $env:GITHUB_REPOSITORY
+
+          '::group::Ensure PR has auto-merge enabled'
+          $email = git config --global user.email
+          # gh pr merge $prNumber --auto --delete-branch --merge --repo $env:GITHUB_REPOSITORY
+          # gh pr merge $prNumber --auto --delete-branch --squash --repo $env:GITHUB_REPOSITORY --author-email $email
+          gh pr merge $prNumber --auto --delete-branch --squash --repo $env:GITHUB_REPOSITORY
+
+      - name: Generate app token
+        uses: actions/create-github-app-token@v1
+        id: authenticate_approver
+        with:
+          app-id: ${{ secrets.APPROVER_APP_ID }}
+          private-key: ${{ secrets.APPROVER_APP_PEM }}
+
+      - name: Retrieve GitHub App User ID
+        id: app_approver
+        uses: actions/github-script@v7
+        env:
+          appSlug: ${{ steps.authenticate_approver.outputs.app-slug }}
+        with:
+          github-token: ${{ steps.authenticate_approver.outputs.token }}
+          script: |
+            const username = `${process.env.appSlug}[bot]`
+            console.log(`Username: ${username}`)
+
+            const app = (await github.rest.users.getByUsername({
+              username: `${username}`
+            })).data
+
+            console.log(JSON.stringify(app))
+
+            return app
+
+      - name: Application data
+        shell: pwsh
+        env:
+          DATA: ${{ steps.app_approver.outputs.result }}
+        run: |
+          $data = $env:DATA | ConvertFrom-Json
+          Write-Verbose ($data | Out-String) -Verbose
+
+      - name: Approve PR changes
+        id: pr_approve
+        shell: pwsh
+        env:
+          GITHUB_ENTERPRISE_TOKEN: ${{ steps.authenticate_approver.outputs.token }}
+          GH_HOST: dnb.ghe.com
+          PR_NUMBER: ${{ steps.pr.outputs.prNumber }}
+          APP_USER_OBJECT: ${{ steps.app_approver.outputs.result }}
+        run: |
+          '::group::Authenticate to GitHub'
+          $env:GITHUB_ENTERPRISE_TOKEN | gh auth login --hostname $env:GH_HOST --with-token
+          gh auth status
+
+          '::group::Configure git'
+          $app = $env:APP_USER_OBJECT | ConvertFrom-Json
+          git config --global user.name "$($app.login)"
+          git config --global user.email "$($app.id)+$($app.login)@users.noreply.github.com"
+          git config --global --list
+
+          $prNumber = $env:PR_NUMBER
+          '::group::Ensure PR is approved'
+          gh pr review $prNumber --approve --repo $env:GITHUB_REPOSITORY
+
+      - name: Confirm issue
+        uses: actions/github-script@v7
+        env:
+          reviewer_team: ${{ vars.reviewer_team }}
+          pr_number: ${{ steps.pr.outputs.prNumber }}
+        with:
+          github-token: ${{ steps.authenticate.outputs.token }}
+          script: |
+            const fs = require('fs')
+            const filePath = '${{ steps.build.outputs.file-path }}'
+            const fileName = filePath.split('/').pop()
+            const fileContent = fs.readFileSync(filePath, 'utf8')
+
+            const body = `
+            @${context.actor} : Everything looks good on the surface! We have opened a PR for the repository.
+
+            #${process.env.pr_number}
+
+            <details>
+            <summary>Terraform file</summary>
+
+            From: [${fileName}]
+            \`\`\`terraform
+            ${fileContent}
+            \`\`\`
+            </details>
+            `
+
+            github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body
+            })
