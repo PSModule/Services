@@ -1,0 +1,59 @@
+# GitHub Enterprise Documentation:
+# - https://github.com/andyfeller/issueops-createrepo
+# - https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms
+# - https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-githubs-form-schema
+#
+name: New-Project
+description: |
+  Request creation of a project in the MSX organization.
+
+  A project consists of the following:
+    - Repository based on a template.
+#   - Channel in Discord.
+
+labels:
+  - New-Project
+
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      description: Select a type or project. For more info about the project types, please check [Project types](https://psmodule.io/Types).
+      options:
+        - Action
+        - FunctionApp
+        - PSModule
+        - Workflow
+        - '-----------'
+        - Bare
+        - Template
+      default: 0
+    validations:
+      required: true
+  - type: input
+    id: name
+    attributes:
+      label: Name
+      description: The name of the project. This will be the repo name.
+    validations:
+      required: true
+  - type: input
+    id: description
+    attributes:
+      label: Description
+  - type: dropdown
+    id: visibility
+    attributes:
+      label: Visibility
+      description: |
+        - **Public**: Anyone on the internet can see this repository. You choose who can commit.
+        - **Internal**: Enterprise members can see this repository. You can choose who can commit.
+        - **Private**: You choose who can see and commit to this repository.
+      options:
+        - Internal
+        - Private
+        - Public
+      default: 0
+    validations:
+      required: true
