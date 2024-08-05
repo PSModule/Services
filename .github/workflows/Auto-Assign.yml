@@ -1,0 +1,48 @@
+name: Create Repo - Assign
+on:
+  issues:
+    types:
+      - opened
+
+permissions:
+  contents: read
+
+env:
+  number_of_assignees: 1
+
+jobs:
+  assign:
+    name: Assign new issue
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'New-Project')
+    steps:
+      - name: Generate app token
+        uses: actions/create-github-app-token@v1
+        id: authenticate
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Acknowledge
+        uses: actions/github-script@v7
+        env:
+          reviewer_team: ${{ vars.reviewer_team }}
+        with:
+          github-token: ${{ steps.authenticate.outputs.token }}
+          script: |
+            const body = `
+            @${context.actor} : Hey!  Let's get this issue assigned to someone from the @${context.repo.owner}/${process.env.reviewer_team} team while we validate the request.
+            `
+
+            github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body
+            })
+
+      - name: Auto-assign issue
+        uses: pozil/auto-assign-issue@v2.0.0
+        with:
+          repo-token: ${{ steps.authenticate.outputs.token }}
+          teams: ${{ vars.reviewer_team }}
+          numOfAssignee: ${{ env.number_of_assignees }}
