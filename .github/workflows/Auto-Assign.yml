@@ -30,7 +30,13 @@ jobs:
           body: ${{ github.event.issue.body }}
         shell: pwsh
         run: |
-          $env:body
+          $parts = $env:body -Split "###"
+          $i = 0
+          foreach ($part in $parts) {
+            Write-Output "Part $i++"
+            Write-Output $part
+          }
+
 
       - name: Acknowledge
         uses: actions/github-script@v7
