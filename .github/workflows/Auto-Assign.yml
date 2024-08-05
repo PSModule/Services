@@ -51,6 +51,7 @@ jobs:
 
           # Loop through each line of the file content
           foreach ($line in $content) {
+              Write-Verbose "Processing line: [$line]"
               if ($line -match "^### (.+)$") {
                   # If a new header is found, store the current header and paragraph in the results
                   if ($currentHeader -ne "") {
