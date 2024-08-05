@@ -40,7 +40,7 @@ jobs:
 
           Start-LogGroup "Issue Body Split"
           # Read the content of the file
-          $content = $env:body.Split([Environment]::NewLine)
+          $content = $env:body.Split([Environment]::NewLine) | Where-Object { $_ -ne "" }
 
           # Initialize an array to store the results
           $results = @()
