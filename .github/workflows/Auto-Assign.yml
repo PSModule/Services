@@ -33,6 +33,7 @@ jobs:
           body: ${{ github.event.issue.body }}
         shell: pwsh
         run: |
+          $VerbosePreference = "Continue"
           Start-LogGroup "Issue Body"
           $env:body
           Stop-LogGroup
