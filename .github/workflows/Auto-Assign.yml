@@ -38,13 +38,47 @@ jobs:
           Stop-LogGroup
 
           Start-LogGroup "Issue Body Split"
-          $parts = $env:body -Split "###"
-          $i = 0
-          foreach ($part in $parts) {
-            Write-Output "Part $i"
-            Write-Output $part
-            $i++
+          # Read the content of the file
+          $content = $env:body
+
+          # Initialize an array to store the results
+          $results = @()
+
+          # Initialize variables to store the current header and paragraph
+          $currentHeader = ""
+          $currentParagraph = ""
+
+          # Loop through each line of the file content
+          foreach ($line in $content) {
+              if ($line -match "^### (.+)$") {
+                  # If a new header is found, store the current header and paragraph in the results
+                  if ($currentHeader -ne "") {
+                      $results += [PSCustomObject]@{
+                          Header = $currentHeader
+                          Paragraph = $currentParagraph.Trim()
+                      }
+                  }
+
+                  # Update the current header and reset the paragraph
+                  $currentHeader = $matches[1]
+                  $currentParagraph = ""
+              } else {
+                  # Append the line to the current paragraph
+                  $currentParagraph += " " + $line
+              }
           }
+
+          # Add the last header and paragraph to the results
+          if ($currentHeader -ne "") {
+              $results += [PSCustomObject]@{
+                  Header = $currentHeader
+                  Paragraph = $currentParagraph.Trim()
+              }
+          }
+
+          # Output the results
+          $results | Format-Table -AutoSize
+
           Stop-LogGroup
 
       - name: Acknowledge
