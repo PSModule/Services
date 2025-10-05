@@ -18,13 +18,13 @@ jobs:
     if: contains(github.event.issue.labels.*.name, 'New-Project')
     steps:
       - name: Generate app token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         id: authenticate
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - uses: PSModule/debug@v0
+      - uses: PSModule/debug@v1
 
       - uses: PSModule/Initialize-PSModule@main
 
@@ -50,7 +50,7 @@ jobs:
             })
 
       - name: Auto-assign issue
-        uses: pozil/auto-assign-issue@v2.0.0
+        uses: pozil/auto-assign-issue@v2.2.0
         with:
           repo-token: ${{ steps.authenticate.outputs.token }}
           teams: ${{ vars.reviewer_team }}
