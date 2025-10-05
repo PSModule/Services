@@ -24,7 +24,7 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - uses: PSModule/debug@v0
+      - uses: PSModule/debug@v1
 
       - uses: PSModule/Initialize-PSModule@main
 
