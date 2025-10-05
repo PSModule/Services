@@ -46,7 +46,7 @@ jobs:
           script: |
               return (
                 await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                  ... context.repo,
+                  ...context.repo,
                   commit_sha: context.sha,
                 })
               ).data[0]
