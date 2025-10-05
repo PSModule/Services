@@ -302,7 +302,7 @@ jobs:
         shell: pwsh
         env:
           GITHUB_ENTERPRISE_TOKEN: ${{ steps.authenticate_approver.outputs.token }}
-          GH_HOST: dnb.ghe.com
+          GH_HOST: msx.ghe.com
           PR_NUMBER: ${{ steps.pr.outputs.prNumber }}
           APP_USER_OBJECT: ${{ steps.app_approver.outputs.result }}
         run: |
