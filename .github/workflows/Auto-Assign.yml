@@ -33,7 +33,7 @@ jobs:
         uses: PSModule/Get-IssueFormData@v1
 
       - name: Acknowledge
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           reviewer_team: ${{ vars.reviewer_team }}
         with:
