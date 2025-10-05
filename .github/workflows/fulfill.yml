@@ -94,7 +94,7 @@ jobs:
 
       - name: Terraform apply
         env:
-          # GITHUB_TOKEN: ${{ steps.authenticate.outputs.token }} # App has issues with GH permissions team lookup and generate repo from templateæ
+          # GITHUB_TOKEN: ${{ steps.authenticate.outputs.token }} # App has issues with GH permissions team lookup and generate repo from template
           GITHUB_TOKEN: ${{ secrets.PAT }}
         run: terraform apply -auto-approve
 
