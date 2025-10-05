@@ -50,7 +50,7 @@ jobs:
             })
 
       - name: Auto-assign issue
-        uses: pozil/auto-assign-issue@v2.0.0
+        uses: pozil/auto-assign-issue@v2.2.0
         with:
           repo-token: ${{ steps.authenticate.outputs.token }}
           teams: ${{ vars.reviewer_team }}
