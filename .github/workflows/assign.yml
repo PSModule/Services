@@ -24,7 +24,7 @@ jobs:
           private-key: ${{ secrets.APP_PEM }}
 
       - name: Acknowledge
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           reviewer_team: ${{ vars.reviewer_team }}
         with:
