@@ -14,7 +14,7 @@ jobs:
     if: contains(github.event.issue.labels.*.name, 'create-repo') && github.event.issue.state == 'open'
     steps:
       - name: Generate app token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         id: authenticate
         with:
           app-id: ${{ secrets.APP_ID }}
@@ -264,7 +264,7 @@ jobs:
           gh pr merge $prNumber --auto --delete-branch --squash --repo $env:GITHUB_REPOSITORY
 
       - name: Generate app token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         id: authenticate_approver
         with:
           app-id: ${{ secrets.APPROVER_APP_ID }}

@@ -24,7 +24,7 @@ jobs:
     environment: prod
     steps:
       - name: Generate app token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         id: authenticate
         with:
           app-id: ${{ secrets.APP_ID }}
