@@ -17,7 +17,7 @@ jobs:
     if: contains(github.event.issue.labels.*.name, 'create-repo') && github.event.action == 'opened'
     steps:
       - name: Generate app token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         id: authenticate
         with:
           app-id: ${{ secrets.APP_ID }}
