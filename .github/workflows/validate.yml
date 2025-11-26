@@ -63,7 +63,7 @@ jobs:
           Write-Verbose ($data | Out-String) -Verbose
 
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ steps.authenticate.outputs.token }}
