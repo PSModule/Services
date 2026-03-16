@@ -18,7 +18,7 @@ jobs:
     if: contains(github.event.issue.labels.*.name, 'New-Project')
     steps:
       - name: Generate app token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         id: authenticate
         with:
           app-id: ${{ secrets.APP_ID }}
