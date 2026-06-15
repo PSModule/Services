@@ -70,7 +70,7 @@ jobs:
 
       - name: Parse issue form
         id: parse
-        uses: zentered/issue-forms-body-parser@v2.2.0
+        uses: zentered/issue-forms-body-parser@v3.0.0
 
       - name: Print parsed data
         shell: pwsh
